@@ -1,19 +1,17 @@
 import { useState } from "react";
-import ChatWidget from "@/components/ui/ChatWidget";
+import ChatWidget, { FormTrigger } from "@/components/ui/ChatWidget";
 import LeadForm from "@/components/ui/LeadForm";
 
 const OutboundChatbot = () => {
-  const [chatMessage, setChatMessage] = useState<string>("");
+  const [formTrigger, setFormTrigger] = useState<FormTrigger | null>(null);
 
-  const handleFormSubmit = async (formData: {
+  const handleFormSubmit = (formData: {
     name: string;
     serviceName: string;
     phoneNumber: string;
     email: string;
   }) => {
-    // Send form data to the outbound chatbot webhook
-    const message = `New lead: Name: ${formData.name}, Service: ${formData.serviceName}, Phone: ${formData.phoneNumber}, Email: ${formData.email}`;
-    setChatMessage(message);
+    setFormTrigger({ id: Date.now(), ...formData });
   };
 
   return (
@@ -50,7 +48,11 @@ const OutboundChatbot = () => {
           <h2 className="text-2xl font-bold text-center text-foreground mb-8">Outbound Chat Assistant</h2>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
             <div className="flex justify-center">
-              <ChatWidget customMessage={chatMessage} apiEndpoint="/api/outbound-chatbot" requireActivation />
+              <ChatWidget
+                formTrigger={formTrigger}
+                apiEndpoint="/api/inbound-chatbot"
+                requireActivation
+              />
             </div>
             <LeadForm onSubmit={handleFormSubmit} />
           </div>

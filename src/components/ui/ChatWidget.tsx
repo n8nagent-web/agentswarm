@@ -89,7 +89,8 @@ const ChatWidget = ({
         return inboundUrl;
       }
       if (endpoint === '/api/outbound-chatbot') {
-        return 'https://n8n.srv1011048.hstgr.cloud/webhook/outboundchatbot';
+        return import.meta.env.VITE_OUTBOUND_CHATBOT_URL ||
+          'https://demoprojects.app.n8n.cloud/webhook-test/outbound-chatbot';
       }
     }
     return endpoint;

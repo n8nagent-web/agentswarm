@@ -16,10 +16,10 @@ export default defineConfig(({ mode }) => ({
         rewrite: () => "/webhook-test/inbound-chatbot",
       },
       "/api/outbound-chatbot": {
-        target: "https://n8n.srv1011048.hstgr.cloud",
+        target: "https://demoprojects.app.n8n.cloud",
         changeOrigin: true,
         secure: true,
-        rewrite: (path) => path.replace(/^\/api\/outbound-chatbot/, "/webhook/outboundchatbot"),
+        rewrite: () => "/webhook-test/outbound-chatbot",
       },
     },
   },
