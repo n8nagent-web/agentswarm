@@ -1,10 +1,10 @@
 import { useState } from "react";
-import ChatWidget from "@/components/ui/ChatWidget";
+import ChatWidget, { FormTrigger } from "@/components/ui/ChatWidget";
 import VoiceWidget from "@/components/ui/VoiceWidget";
 import LeadForm from "@/components/ui/LeadForm";
 
 const SpeedToLeadAssistant = () => {
-  const [chatMessage, setChatMessage] = useState<string>("");
+  const [formTrigger, setFormTrigger] = useState<FormTrigger | null>(null);
   const [triggerVoiceAgent, setTriggerVoiceAgent] = useState<boolean>(false);
   const [voiceFormData, setVoiceFormData] = useState<{
     name: string;
@@ -13,15 +13,13 @@ const SpeedToLeadAssistant = () => {
     email: string;
   } | null>(null);
 
-  const handleFormSubmit = async (formData: {
+  const handleFormSubmit = (formData: {
     name: string;
     serviceName: string;
     phoneNumber: string;
     email: string;
   }) => {
-    // Send form data to the chatbot webhook
-    const message = `New lead: Name: ${formData.name}, Service: ${formData.serviceName}, Phone: ${formData.phoneNumber}, Email: ${formData.email}`;
-    setChatMessage(message);
+    setFormTrigger({ id: Date.now(), ...formData });
   };
 
   const handleVoiceFormSubmit = (formData: {
@@ -73,7 +71,11 @@ const SpeedToLeadAssistant = () => {
           <h2 className="text-2xl font-bold text-center text-foreground mb-8">Chat Assistant</h2>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
             <div className="flex justify-center">
-              <ChatWidget customMessage={chatMessage} apiEndpoint="/api/chatbot" requireActivation />
+              <ChatWidget
+                formTrigger={formTrigger}
+                apiEndpoint="/api/inbound-chatbot"
+                requireActivation
+              />
             </div>
             <LeadForm onSubmit={handleFormSubmit} />
           </div>

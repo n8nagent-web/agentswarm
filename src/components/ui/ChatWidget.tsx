@@ -38,9 +38,26 @@ interface MessageTrigger {
   text: string;
 }
 
+export interface FormTrigger {
+  id: number;
+  name: string;
+  serviceName: string;
+  phoneNumber: string;
+  email: string;
+}
+
+interface WebhookExtras {
+  form?: boolean;
+  name?: string;
+  serviceName?: string;
+  phoneNumber?: string;
+  email?: string;
+}
+
 interface ChatWidgetProps {
   customMessage?: string;
   messageTrigger?: MessageTrigger | null;
+  formTrigger?: FormTrigger | null;
   apiEndpoint?: string;
   showOnlyAgentMessages?: boolean;
   requireActivation?: boolean;
@@ -50,6 +67,7 @@ interface ChatWidgetProps {
 const ChatWidget = ({
   customMessage,
   messageTrigger,
+  formTrigger,
   apiEndpoint = '/api/chatbot',
   showOnlyAgentMessages = false,
   requireActivation = false,
@@ -104,19 +122,29 @@ const ChatWidget = ({
     return errorBody || `HTTP ${response.status} ${response.statusText}`;
   };
 
-  const fetchBotReply = useCallback(async (messageText: string): Promise<string> => {
+  const fetchBotReply = useCallback(async (messageText: string, extras?: WebhookExtras): Promise<string> => {
+    const body: Record<string, unknown> = {
+      message: messageText,
+      chatInput: messageText,
+      text: messageText,
+      chatId,
+      sessionId: chatId,
+      form: extras?.form === true,
+    };
+
+    if (extras?.form) {
+      body.name = extras.name;
+      body.serviceName = extras.serviceName;
+      body.phoneNumber = extras.phoneNumber;
+      body.email = extras.email;
+    }
+
     const response = await fetch(getApiUrl(apiEndpoint), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        message: messageText,
-        chatInput: messageText,
-        text: messageText,
-        chatId,
-        sessionId: chatId,
-      }),
+      body: JSON.stringify(body),
     });
 
     const contentType = response.headers.get('content-type') || '';
@@ -144,13 +172,17 @@ const ChatWidget = ({
     return stripHtml(outputText);
   }, [apiEndpoint, chatId]);
 
-  const sendExternalMessage = useCallback(async (messageText: string, userMessageId: number) => {
+  const sendExternalMessage = useCallback(async (
+    messageText: string,
+    userMessageId: number,
+    extras?: WebhookExtras,
+  ) => {
     setIsActive(true);
     setMessages(prev => [...prev, { id: userMessageId, text: messageText, isUser: true }]);
     setIsLoading(true);
 
     try {
-      const outputText = await fetchBotReply(messageText);
+      const outputText = await fetchBotReply(messageText, extras);
       setMessages(prev => [...prev, { id: userMessageId + 1, text: outputText, isUser: false }]);
     } catch (error) {
       console.error('Auto-chat API error:', error);
@@ -171,6 +203,21 @@ const ChatWidget = ({
     if (!messageTrigger?.id || !messageTrigger.text.trim()) return;
     sendExternalMessage(messageTrigger.text, messageTrigger.id);
   }, [messageTrigger?.id, messageTrigger?.text, sendExternalMessage]);
+
+  useEffect(() => {
+    if (!formTrigger?.id) return;
+
+    const { id, name, serviceName, phoneNumber, email } = formTrigger;
+    const userDisplay = `Hi, I'm ${name}. I'm interested in ${serviceName}.`;
+
+    sendExternalMessage(userDisplay, id, {
+      form: true,
+      name,
+      serviceName,
+      phoneNumber,
+      email,
+    });
+  }, [formTrigger?.id, sendExternalMessage]);
 
   useEffect(() => {
     if (!customMessage?.trim()) return;
