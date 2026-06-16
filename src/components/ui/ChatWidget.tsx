@@ -82,7 +82,7 @@ const ChatWidget = ({
   const getApiUrl = (endpoint: string) => {
     const inboundUrl =
       import.meta.env.VITE_INBOUND_CHATBOT_URL ||
-      'https://demoprojects.app.n8n.cloud/webhook-test/inbound-chatbot';
+      'https://nineteen-magazine-emote.ngrok-free.dev/webhook/inbound-chatbot';
 
     if (import.meta.env.PROD) {
       if (endpoint === '/api/inbound-chatbot') {
@@ -140,11 +140,17 @@ const ChatWidget = ({
       body.email = extras.email;
     }
 
-    const response = await fetch(getApiUrl(apiEndpoint), {
+    const url = getApiUrl(apiEndpoint);
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (url.includes('ngrok')) {
+      headers['ngrok-skip-browser-warning'] = 'true';
+    }
+
+    const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(body),
     });
 

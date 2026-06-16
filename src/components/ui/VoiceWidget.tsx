@@ -1,113 +1,159 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Mic, MicOff, Volume2 } from "lucide-react";
-import Vapi from "@vapi-ai/web";
+import { RetellWebClient } from "retell-client-js-sdk";
+import { createRetellWebCall } from "@/lib/retell";
 
-interface VoiceWidgetProps {
-  triggerAgent?: boolean;
-  onAgentEnd?: () => void;
-  assistantId?: string;
-  formData?: {
-    name: string;
-    serviceName: string;
-    phoneNumber: string;
-    email: string;
-  };
+export interface VoiceTrigger {
+  id: number;
+  name: string;
+  serviceName: string;
+  phoneNumber: string;
+  email: string;
 }
 
-const VoiceWidget = ({ triggerAgent, onAgentEnd, assistantId = "16d5985e-864a-4966-88fb-3e6d7f1834fa", formData }: VoiceWidgetProps) => {
+interface VoiceWidgetProps {
+  voiceTrigger?: VoiceTrigger | null;
+  onAgentEnd?: () => void;
+  assistantId?: string;
+  leadMode?: boolean;
+}
+
+const defaultAgentId = import.meta.env.VITE_RETELL_AGENT_ID || "";
+
+const VoiceWidget = ({
+  voiceTrigger,
+  onAgentEnd,
+  assistantId = defaultAgentId,
+  leadMode = false,
+}: VoiceWidgetProps) => {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const vapiRef = useRef<Vapi | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const retellRef = useRef<RetellWebClient | null>(null);
+  const activeCallRef = useRef(false);
+  const lastVoiceTriggerIdRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    // Initialize Vapi
-    vapiRef.current = new Vapi("ba188daf-c05b-46f2-abac-edda7af8bc64");
-    
-    vapiRef.current.on("call-start", () => {
-      setIsListening(true);
-      setIsSpeaking(false);
-    });
-    
-    vapiRef.current.on("call-end", () => {
-      setIsListening(false);
-      setIsSpeaking(false);
-      onAgentEnd?.();
-    });
-    
-    vapiRef.current.on("speech-start", () => {
-      setIsListening(false);
-      setIsSpeaking(true);
-    });
-    
-    vapiRef.current.on("speech-end", () => {
-      setIsSpeaking(false);
-      setIsListening(true);
-    });
-
-    return () => {
-      vapiRef.current?.stop();
-    };
+  const handleCallEnded = useCallback(() => {
+    activeCallRef.current = false;
+    setIsListening(false);
+    setIsSpeaking(false);
+    onAgentEnd?.();
   }, [onAgentEnd]);
 
   useEffect(() => {
-    if (triggerAgent && vapiRef.current) {
-      startVoiceAgent();
-    }
-  }, [triggerAgent]);
+    const client = new RetellWebClient();
+    retellRef.current = client;
 
-  const startVoiceAgent = async () => {
-    if (vapiRef.current) {
-      try {
-        // If form data is provided, start with context
-        if (formData) {
-          await vapiRef.current.start(assistantId, {
-            variableValues: {
-              leadName: formData.name,
-              serviceName: formData.serviceName,
-              phoneNumber: formData.phoneNumber,
-              email: formData.email,
-            },
-            firstMessage: `Hello ${formData.name}, I understand you're interested in ${formData.serviceName}. How can I help you today?`,
-          });
-        } else {
-          await vapiRef.current.start(assistantId);
-        }
-      } catch (error) {
-        console.error("Failed to start voice agent:", error);
-        setIsListening(false);
-        setIsSpeaking(false);
+    client.on("call_started", () => {
+      activeCallRef.current = true;
+      setIsListening(true);
+      setIsSpeaking(false);
+      setError(null);
+    });
+
+    client.on("call_ended", handleCallEnded);
+
+    client.on("agent_start_talking", () => {
+      setIsSpeaking(true);
+      setIsListening(false);
+    });
+
+    client.on("agent_stop_talking", () => {
+      setIsSpeaking(false);
+      if (activeCallRef.current) {
+        setIsListening(true);
       }
+    });
+
+    client.on("error", (message: string) => {
+      console.error("Retell error:", message);
+      setError(typeof message === "string" ? message : "Voice call failed");
+      handleCallEnded();
+    });
+
+    return () => {
+      client.stopCall();
+      retellRef.current = null;
+      activeCallRef.current = false;
+    };
+  }, [handleCallEnded]);
+
+  const startVoiceAgent = useCallback(async (leadData?: VoiceTrigger) => {
+    if (!retellRef.current || activeCallRef.current) return;
+
+    if (!assistantId) {
+      setError("Retell agent ID is not configured. Set VITE_RETELL_AGENT_ID in your .env file.");
+      return;
     }
-  };
+
+    try {
+      setError(null);
+
+      const isLeadCall = Boolean(leadData);
+      const dynamicVariables: Record<string, string> = {
+        form: isLeadCall ? "true" : "false",
+      };
+
+      if (leadData) {
+        dynamicVariables.customer_name = leadData.name;
+        dynamicVariables.service_name = leadData.serviceName;
+        dynamicVariables.phone_number = leadData.phoneNumber;
+        dynamicVariables.email = leadData.email;
+        dynamicVariables.lead_name = leadData.name;
+      }
+
+      const beginMessage = leadData
+        ? `Hi ${leadData.name}, you asked for ${leadData.serviceName}. How can I help you today?`
+        : undefined;
+
+      const { access_token } = await createRetellWebCall(assistantId, {
+        dynamicVariables,
+        beginMessage,
+      });
+
+      await retellRef.current.startCall({ accessToken: access_token });
+      await retellRef.current.startAudioPlayback();
+    } catch (err) {
+      console.error("Failed to start Retell voice call:", err);
+      setError(err instanceof Error ? err.message : "Failed to start voice call");
+      handleCallEnded();
+    }
+  }, [assistantId, handleCallEnded]);
+
+  useEffect(() => {
+    if (!voiceTrigger?.id || lastVoiceTriggerIdRef.current === voiceTrigger.id) return;
+
+    lastVoiceTriggerIdRef.current = voiceTrigger.id;
+    startVoiceAgent(voiceTrigger);
+  }, [voiceTrigger, startVoiceAgent]);
 
   const toggleListening = () => {
-    if (isListening && vapiRef.current) {
-      vapiRef.current.stop();
-    } else {
-      startVoiceAgent();
+    if (isListening && retellRef.current) {
+      retellRef.current.stopCall();
+      return;
     }
+
+    startVoiceAgent();
   };
 
   return (
     <div className="flex flex-col items-center space-y-6">
       <div className="relative">
-        {/* Animated rings */}
         {(isListening || isSpeaking) && (
           <>
             <div className="absolute inset-0 rounded-full bg-primary/20 animate-ping"></div>
             <div className="absolute inset-2 rounded-full bg-primary/40 animate-pulse"></div>
           </>
         )}
-        
-        {/* Main sphere */}
-        <div 
+
+        <div
           className={`relative w-32 h-32 rounded-full flex items-center justify-center transition-all duration-300 ${
-            isListening 
-              ? 'bg-destructive shadow-lg shadow-destructive/50' 
+            isListening
+              ? "bg-destructive shadow-lg shadow-destructive/50"
               : isSpeaking
-              ? 'bg-primary shadow-lg shadow-primary/50'
-              : 'bg-muted hover:bg-muted/80'
+              ? "bg-primary shadow-lg shadow-primary/50"
+              : "bg-muted hover:bg-muted/80"
           }`}
         >
           {isListening ? (
@@ -123,42 +169,59 @@ const VoiceWidget = ({ triggerAgent, onAgentEnd, assistantId = "16d5985e-864a-49
       <div className="text-center space-y-4">
         <div className="space-y-2">
           <h3 className="text-xl font-semibold text-foreground">
-            {isListening 
-              ? 'Listening to you...' 
-              : isSpeaking 
-              ? 'AI is speaking...' 
-              : 'Ready to Talk'
-            }
+            {isListening
+              ? "Listening to you..."
+              : isSpeaking
+              ? "AI is speaking..."
+              : "Ready to Talk"}
           </h3>
           <p className="text-sm text-muted-foreground">
-            {isListening 
-              ? 'Speak now, I\'m listening' 
-              : isSpeaking 
-              ? 'Please wait while I respond' 
-              : 'Click the button below to start a voice conversation'
-            }
+            {isListening
+              ? "Speak now, I'm listening"
+              : isSpeaking
+              ? "Please wait while I respond"
+              : leadMode
+              ? "Submit the form to start a personalized voice call"
+              : "Click the button below to start a voice conversation"}
           </p>
-        </div>
-        
-        <Button 
-          onClick={toggleListening}
-          variant={isListening ? "destructive" : "default"}
-          disabled={isSpeaking}
-          size="lg"
-          className="w-full max-w-xs"
-        >
-          {isListening ? (
-            <>
-              <MicOff className="w-5 h-5 mr-2" />
-              End Conversation
-            </>
-          ) : (
-            <>
-              <Mic className="w-5 h-5 mr-2" />
-              Start Voice Chat
-            </>
+          {error && (
+            <p className="text-sm text-destructive max-w-xs mx-auto">{error}</p>
           )}
-        </Button>
+        </div>
+
+        {!leadMode && (
+          <Button
+            onClick={toggleListening}
+            variant={isListening ? "destructive" : "default"}
+            disabled={isSpeaking}
+            size="lg"
+            className="w-full max-w-xs"
+          >
+            {isListening ? (
+              <>
+                <MicOff className="w-5 h-5 mr-2" />
+                End Conversation
+              </>
+            ) : (
+              <>
+                <Mic className="w-5 h-5 mr-2" />
+                Start Voice Chat
+              </>
+            )}
+          </Button>
+        )}
+
+        {voiceTrigger && (isListening || isSpeaking) && (
+          <Button
+            onClick={toggleListening}
+            variant="destructive"
+            size="lg"
+            className="w-full max-w-xs"
+          >
+            <MicOff className="w-5 h-5 mr-2" />
+            End Conversation
+          </Button>
+        )}
       </div>
     </div>
   );

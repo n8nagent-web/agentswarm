@@ -1,17 +1,11 @@
 import { useState } from "react";
 import ChatWidget, { FormTrigger } from "@/components/ui/ChatWidget";
-import VoiceWidget from "@/components/ui/VoiceWidget";
+import VoiceWidget, { VoiceTrigger } from "@/components/ui/VoiceWidget";
 import LeadForm from "@/components/ui/LeadForm";
 
 const SpeedToLeadAssistant = () => {
   const [formTrigger, setFormTrigger] = useState<FormTrigger | null>(null);
-  const [triggerVoiceAgent, setTriggerVoiceAgent] = useState<boolean>(false);
-  const [voiceFormData, setVoiceFormData] = useState<{
-    name: string;
-    serviceName: string;
-    phoneNumber: string;
-    email: string;
-  } | null>(null);
+  const [voiceTrigger, setVoiceTrigger] = useState<VoiceTrigger | null>(null);
 
   const handleFormSubmit = (formData: {
     name: string;
@@ -28,13 +22,11 @@ const SpeedToLeadAssistant = () => {
     phoneNumber: string;
     email: string;
   }) => {
-    setVoiceFormData(formData);
-    setTriggerVoiceAgent(true);
+    setVoiceTrigger({ id: Date.now(), ...formData });
   };
 
   const handleVoiceAgentEnd = () => {
-    setTriggerVoiceAgent(false);
-    setVoiceFormData(null);
+    setVoiceTrigger(null);
   };
 
   return (
@@ -86,12 +78,11 @@ const SpeedToLeadAssistant = () => {
           <h2 className="text-2xl font-bold text-center text-foreground mb-8">Voice Assistant</h2>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
             <div className="flex justify-center">
-            <VoiceWidget 
-              triggerAgent={triggerVoiceAgent} 
-              onAgentEnd={handleVoiceAgentEnd}
-              assistantId="16c78786-51b5-4642-a717-88821837d8c0"
-              formData={voiceFormData || undefined}
-            />
+              <VoiceWidget
+                leadMode
+                voiceTrigger={voiceTrigger}
+                onAgentEnd={handleVoiceAgentEnd}
+              />
             </div>
             <LeadForm onSubmit={handleVoiceFormSubmit} />
           </div>

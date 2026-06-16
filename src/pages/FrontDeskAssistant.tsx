@@ -57,7 +57,7 @@ const FrontDeskAssistant = () => {
       <section className="mt-20">
         <h2 className="text-2xl font-bold text-foreground text-center mb-10">Voice Assistant</h2>
         <div className="flex justify-center">
-          <VoiceWidget assistantId="16d5985e-864a-4966-88fb-3e6d7f1834fa" />
+          <VoiceWidget />
         </div>
       </section>
     </div>
