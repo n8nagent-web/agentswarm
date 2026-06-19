@@ -29,17 +29,25 @@ const VoiceWidget = ({
 }: VoiceWidgetProps) => {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
   const retellRef = useRef<RetellWebClient | null>(null);
   const activeCallRef = useRef(false);
+  const startingCallRef = useRef(false);
   const lastVoiceTriggerIdRef = useRef<number | null>(null);
+  const onAgentEndRef = useRef(onAgentEnd);
+
+  onAgentEndRef.current = onAgentEnd;
 
   const handleCallEnded = useCallback(() => {
     activeCallRef.current = false;
+    startingCallRef.current = false;
+    setIsStarting(false);
     setIsListening(false);
     setIsSpeaking(false);
-    onAgentEnd?.();
-  }, [onAgentEnd]);
+    onAgentEndRef.current?.();
+  }, []);
 
   useEffect(() => {
     const client = new RetellWebClient();
@@ -47,6 +55,8 @@ const VoiceWidget = ({
 
     client.on("call_started", () => {
       activeCallRef.current = true;
+      startingCallRef.current = false;
+      setIsStarting(false);
       setIsListening(true);
       setIsSpeaking(false);
       setError(null);
@@ -76,16 +86,20 @@ const VoiceWidget = ({
       client.stopCall();
       retellRef.current = null;
       activeCallRef.current = false;
+      startingCallRef.current = false;
     };
   }, [handleCallEnded]);
 
   const startVoiceAgent = useCallback(async (leadData?: VoiceTrigger) => {
-    if (!retellRef.current || activeCallRef.current) return;
+    if (!retellRef.current || activeCallRef.current || startingCallRef.current) return;
 
     if (!assistantId) {
       setError("Retell agent ID is not configured. Set VITE_RETELL_AGENT_ID in your .env file.");
       return;
     }
+
+    startingCallRef.current = true;
+    setIsStarting(true);
 
     try {
       setError(null);
@@ -112,8 +126,11 @@ const VoiceWidget = ({
         beginMessage,
       });
 
+      if (!retellRef.current || !startingCallRef.current) return;
+
+      // startCall already attaches agent audio — do NOT call startAudioPlayback()
+      // or the same voice plays twice (echo/double audio).
       await retellRef.current.startCall({ accessToken: access_token });
-      await retellRef.current.startAudioPlayback();
     } catch (err) {
       console.error("Failed to start Retell voice call:", err);
       setError(err instanceof Error ? err.message : "Failed to start voice call");
@@ -193,7 +210,7 @@ const VoiceWidget = ({
           <Button
             onClick={toggleListening}
             variant={isListening ? "destructive" : "default"}
-            disabled={isSpeaking}
+            disabled={isSpeaking || isStarting}
             size="lg"
             className="w-full max-w-xs"
           >
